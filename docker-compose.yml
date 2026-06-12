@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+
+  # ── Flask API ──────────────────────────────────────────────────────────────
+  flask:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flask_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://user:pass@db:5432/itemsdb
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+    # Not exposed directly — Nginx handles all external traffic
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: itemsdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d itemsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - flask
+    networks:
+      - app-network
+
+  # ── pgAdmin (DB GUI) ───────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
